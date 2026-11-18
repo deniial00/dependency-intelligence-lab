@@ -237,6 +237,18 @@ async def test_osv_empty_answer_is_a_successful_empty_tuple(payload: Any) -> Non
     assert advisories is not None
 
 
+async def test_osv_makes_a_single_query_and_ignores_next_page_token() -> None:
+    upstream = FakeUpstream(
+        {"/v1/query": ok({"vulns": [{"id": "GHSA-1"}], "next_page_token": "more"})}
+    )
+
+    async with json_http(upstream) as http:
+        advisories = await OSVClient(http, base_url=BASE).fetch_vulnerabilities(DEMO)
+
+    assert advisories == (Vulnerability("GHSA-1", (), None),)
+    assert len(upstream.requests) == 1
+
+
 @pytest.mark.parametrize("reverse", [False, True])
 async def test_osv_merges_transitive_aliases_independent_of_input_order(reverse: bool) -> None:
     records = [
@@ -339,6 +351,20 @@ async def test_deps_dev_percent_encodes_the_version_segment() -> None:
         b"/v3/systems/PYPI/packages/demo/versions/1.0%2Blocal.1",
         b"/v3/systems/PYPI/packages/demo/versions/1.0%2Blocal.1:dependencies",
     }
+
+
+async def test_deps_dev_does_not_compare_version_keys_with_the_requested_coordinate() -> None:
+    other = version_key("Other_Name", "9.9")
+    graph = dependency_graph()
+    graph["nodes"][0]["versionKey"] = other
+    upstream = FakeUpstream(
+        {DEPS_METADATA_PATH: ok({"versionKey": other}), DEPS_GRAPH_PATH: ok(graph)}
+    )
+
+    async with json_http(upstream) as http:
+        result = await DepsDevClient(http, base_url=BASE).fetch_supply_chain(DEMO)
+
+    assert result == SupplyChainInformation((), 0, None)
 
 
 @pytest.mark.parametrize(
