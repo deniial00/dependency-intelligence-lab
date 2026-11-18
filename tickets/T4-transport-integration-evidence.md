@@ -104,12 +104,14 @@ that the client built from `Settings(max_http_connections=N)` has pool limit `N`
   Record the interpretation, or tighten validation only if a test requires it.
 - The shared client factory and where limits come from.
 
-## Unresolved production risk to state in `EVIDENCE.md`
+## Production risk to state in `EVIDENCE.md`
 
-By default 8 packages x 4 requests can need 32 concurrent connections against a
-24-connection pool. Excess requests queue on the pool, and httpx counts that wait
-against `request_timeout_seconds`, so slow upstreams may surface queued requests
-as `timeout`. This is from reading the code; reproduce before claiming it.
+Hypothesis from reading the code: by default 8 packages x 4 requests can need 32
+concurrent connections against a 24-connection pool, and httpx counts the queue wait
+against `request_timeout_seconds`, so slow upstreams may surface queued requests as
+`timeout`. Tested during integration and not reproduced with httpx 0.28.1 and httpcore
+1.0.9; the results and remaining limits are in `EVIDENCE.md`, under "Unresolved
+production risk".
 
 ## Focused check
 
