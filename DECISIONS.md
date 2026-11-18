@@ -204,3 +204,20 @@ verification. “The AI suggested it” is not a rationale.
   `test_agent_tool_keeps_the_shared_http_pool_bounded` (24 requests, peak open connections
   equal to the configured 2). The tool test fails with `24 == 2` when `tool_cli.py` builds
   its own client.
+
+## Recording order
+
+`AGENTS.md` asks for an interpretation to be recorded before code depends on it. These
+decisions were recorded after the code, so the file does not meet that rule as written:
+
+- Decisions 1 to 3 (T1) were committed in `4145d60`, after the adapter code in `22be499`
+  and `d7b415b`.
+- Decisions 4 to 6 (T2) were committed in `45b6b06`, after the cache code in `ffa74f2`.
+- Decision 7 (T3) was committed in `c58f5ac`, after the scanner code in `a06141f` was merged.
+- Decision 8 describes behavior of the supplied `DependencyCoordinate` and `api.py`, which
+  existed before this work; it was written when the tests for it were added.
+- Decision 9 was written after the factory code in `bootstrap.py` and `tool_cli.py` was
+  edited and tested, and committed together with it in `c58f5ac`.
+
+The commits were not rewritten. Each decision states the option that was rejected and the
+evidence that checks it, so a reviewer can still overrule it.
