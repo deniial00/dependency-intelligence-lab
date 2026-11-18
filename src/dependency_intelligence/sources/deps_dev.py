@@ -54,9 +54,11 @@ async def _run_together[A, B](
 ) -> tuple[A, B]:
     """Run two independent coroutines concurrently and return both results.
 
-    The first failure cancels the other coroutine. A failure is raised as the original
-    exception, never as an ``ExceptionGroup``. If both coroutines failed, the failure of
-    ``first`` wins, so the outcome does not depend on completion timing.
+    The first failure cancels the other coroutine, so the reported failure is the first one
+    to occur: a coroutine cancelled before it could fail reports nothing. A failure is raised
+    as the original exception, never as an ``ExceptionGroup``. Failures that land before the
+    group has reacted to the first one (the same event-loop pass) are ordered by argument
+    position, with ``first`` winning, rather than by callback order.
     """
     tasks: list[asyncio.Task[Any]] = []
     failure: BaseException | None = None

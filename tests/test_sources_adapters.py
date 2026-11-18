@@ -462,8 +462,8 @@ def failing(kind: FailureKind, *, after_turns: int = 0) -> Callable[[], Awaitabl
     return call
 
 
-async def test_deps_dev_failure_does_not_depend_on_completion_order() -> None:
-    # The graph request fails a turn earlier than the metadata request does.
+async def test_deps_dev_failures_in_the_same_pass_are_ordered_by_endpoint() -> None:
+    # Both requests fail before the group reacts: the graph a turn earlier than metadata.
     http = ScriptedHttp(
         metadata=failing(FailureKind.UNAVAILABLE, after_turns=1),
         graph=failing(FailureKind.NOT_FOUND),
@@ -472,6 +472,30 @@ async def test_deps_dev_failure_does_not_depend_on_completion_order() -> None:
     error = await failure_of(http.client().fetch_supply_chain(DEMO))
 
     assert error.failure.kind is FailureKind.UNAVAILABLE
+
+
+async def test_deps_dev_reports_the_first_failure_and_cancels_a_later_one() -> None:
+    # Fail-fast: a graph failure cancels metadata before it can fail with its own error.
+    cancelled = False
+
+    async def metadata_failing_late() -> Any:
+        nonlocal cancelled
+        try:
+            for _ in range(10):
+                await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+        raise SourceRequestError(
+            ServiceName.DEPS_DEV, FailureKind.UNAVAILABLE, "too late", retryable=True
+        )
+
+    http = ScriptedHttp(metadata=metadata_failing_late, graph=failing(FailureKind.NOT_FOUND))
+
+    error = await failure_of(http.client().fetch_supply_chain(DEMO))
+
+    assert error.failure.kind is FailureKind.NOT_FOUND
+    assert cancelled
 
 
 async def test_deps_dev_failure_cancels_the_other_request_and_is_not_grouped() -> None:
