@@ -127,3 +127,80 @@ verification. “The AI suggested it” is not a rationale.
 - Evidence that will verify it: `tests/test_cache_policy.py`
   `test_concurrent_get_put_never_exceeds_capacity_or_raises` and
   `test_expired_entries_are_purged_before_lru_eviction`.
+
+## Decision 7
+
+- Context: SPEC 5 and 6 say only complete assessments are cached and that concurrent
+  misses share one load. They do not say where the cache write happens relative to the
+  shared load, what coalesced waiters report when the shared result is partial, or how a
+  non-source exception, or a package whose three sources all failed, is represented.
+- Options considered: write the cache after the shared load returns, in `assess`, or
+  inside the load; map an unexpected exception to a failure, or let it escape; represent
+  an all-failed package as an assessment of three `None` fields, or as no assessment.
+- Decision: (1) `DependencyScanner._load` writes the cache itself, before the shared load
+  completes, and only for a complete assessment. (2) Waiters coalesced onto a partial load
+  report `coalesced` with the same failures as the first caller, and nothing is cached.
+  (3) Any exception other than `SourceRequestError` or cancellation becomes
+  `FailureKind.UNEXPECTED`, attributed to its source, not retryable, with the fixed detail
+  "unexpected source error" (never `str(error)`); cancellation always propagates.
+  (4) When all three sources fail, the result has `assessment=None`. Failures are ordered
+  PyPI, OSV, deps.dev.
+- Consequences and risk: no window exists between the load leaving the flight table and the
+  cache write, so a later caller cannot start a duplicate load. `DependencyScanResult.useful`
+  is `assessment is not None`, so a hollow assessment would turn a failed project into
+  `partial` and HTTP 503 into 200. Known gap: `scan()` cancels its workers only when it is
+  cancelled. If `assess` raises anything else, for example a failing cache backend, `scan`
+  raises while the sibling workers and their source calls keep running. An integration probe
+  with a cache that raised on one package left 5 tasks running and cancelled 0 of 3 source
+  calls. The shipped `AsyncTTLCache` never raises, so this is not reachable in the supplied
+  composition. It needs a follow-up in `service.py`, which is outside T4's files.
+- Specification or acceptance criteria affected: SPEC 5, 6, 7; AC-04, AC-05, AC-06, AC-07.
+- Evidence that will verify it: `tests/test_scanner_orchestration.py`
+  `test_all_sources_failed_returns_failed_report`, `test_single_source_failure_is_partial`,
+  `test_partial_result_is_not_cached`, `test_plain_exception_is_unexpected_and_safe`,
+  `test_cancelling_one_coalesced_waiter_keeps_load_running`, and
+  `tests/test_contract.py` `test_complete_result_is_cached_and_identical_misses_coalesce`.
+  Three concurrent callers with OSV failing gave `miss`, `coalesced`, `coalesced`, one
+  shared failure, 0 cached entries and 1 OSV call in a one-off integration run; no test
+  pins that case.
+
+## Decision 8
+
+- Context: SPEC 3 accepts only the `PyPI` ecosystem. `DependencyCoordinate` compares
+  `ecosystem.casefold()` with `pypi` and stores `PyPI`, so the HTTP input
+  `"ecosystem": "pypi"` or `"PYPI"` is accepted.
+- Options considered: (a) accept any casing and store `PyPI`; (b) require the exact spelling
+  `PyPI` in the transport schema, which means changing the supplied `api.py` or `domain.py`.
+- Decision: (a). Any other ecosystem is rejected with HTTP 422 before scanning, and the
+  reported and cached ecosystem is always `PyPI`.
+- Consequences and risk: a client that sends `pypi` succeeds where the strictest reading
+  would reject it. Nothing downstream differs, because the cache key and every report use
+  the normalized value. Tighten the schema if the acceptance rules require exact casing.
+- Specification or acceptance criteria affected: SPEC 3.1, AC-01.
+- Evidence that will verify it: `tests/test_transport_boundaries.py`
+  `test_lowercase_ecosystem_is_accepted_and_normalized` and the `non-pypi-ecosystem` case
+  of `test_invalid_request_is_rejected_before_any_scan`.
+
+## Decision 9
+
+- Context: SPEC 5 requires the shared HTTP pool to stay bounded by configuration. The API
+  lifespan built its client with `httpx.Limits(max_connections=settings.max_http_connections)`.
+  `tool_cli.py` built its own `httpx.AsyncClient(timeout=...)` without limits, so
+  `MAX_HTTP_CONNECTIONS` was ignored on the agent-tool path and httpx's default of 100
+  applied, with no `User-Agent`. Reproduced before the fix: six packages and 24 requests
+  opened 24 connections against a configured limit of 2.
+- Options considered: (a) repeat the limits in `tool_cli.py`; (b) one
+  `build_http_client(settings)` in `bootstrap.py` used by both entry points; (c) make
+  `build_scanner` own the client and change its signature.
+- Decision: (b). Timeout, connection limits, and `User-Agent` come from `Settings` in one
+  place, and `max_keepalive_connections` equals `max_connections`. `build_scanner` keeps its
+  signature.
+- Consequences and risk: both transports now share one client policy, and the command line
+  tool sends the same `User-Agent` as the API. The bound is per client, not per upstream
+  host, so one slow host can occupy the whole pool.
+- Specification or acceptance criteria affected: SPEC 5.
+- Evidence that will verify it: `tests/test_transport_boundaries.py`
+  `test_api_keeps_the_shared_http_pool_bounded` and
+  `test_agent_tool_keeps_the_shared_http_pool_bounded` (24 requests, peak open connections
+  equal to the configured 2). The tool test fails with `24 == 2` when `tool_cli.py` builds
+  its own client.

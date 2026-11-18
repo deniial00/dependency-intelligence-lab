@@ -68,6 +68,18 @@ class Settings:
         )
 
 
+def build_http_client(settings: Settings) -> httpx.AsyncClient:
+    """Build the one pooled client every transport shares (SPEC 5: the pool stays bounded)."""
+    return httpx.AsyncClient(
+        timeout=httpx.Timeout(settings.request_timeout_seconds),
+        limits=httpx.Limits(
+            max_connections=settings.max_http_connections,
+            max_keepalive_connections=settings.max_http_connections,
+        ),
+        headers={"User-Agent": "dependency-intelligence-lab/1.0"},
+    )
+
+
 def build_scanner(client: httpx.AsyncClient, settings: Settings) -> DependencyScanner:
     http = JsonHttpClient(client)
     cache: AsyncTTLCache[str, PackageAssessment] = AsyncTTLCache(
@@ -88,15 +100,7 @@ def build_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        limits = httpx.Limits(
-            max_connections=settings.max_http_connections,
-            max_keepalive_connections=settings.max_http_connections,
-        )
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(settings.request_timeout_seconds),
-            limits=limits,
-            headers={"User-Agent": "dependency-intelligence-lab/1.0"},
-        ) as client:
+        async with build_http_client(settings) as client:
             app.state.scanner = build_scanner(client, settings)
             yield
 

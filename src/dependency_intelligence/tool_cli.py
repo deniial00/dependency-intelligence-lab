@@ -8,15 +8,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 from .agent_tool import DependencyScanTool
-from .bootstrap import Settings, build_scanner
+from .bootstrap import Settings, build_http_client, build_scanner
 
 
 async def _run(workspace: Path, manifest: str) -> dict[str, Any]:
     settings = Settings.from_environment()
-    async with httpx.AsyncClient(timeout=settings.request_timeout_seconds) as client:
+    async with build_http_client(settings) as client:
         tool = DependencyScanTool(
             workspace_root=workspace,
             scanner=build_scanner(client, settings),
