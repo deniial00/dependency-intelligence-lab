@@ -73,9 +73,10 @@ that the client built from `Settings(max_http_connections=N)` has pool limit `N`
 
 1. Merge T1, T2, T3 in README order; inspect each diff against its owned files
    and run each focused check before the next merge.
-2. Record each ticket's handed-off decisions in `DECISIONS.md` before merging that
-   ticket. Fill the template: context, options, decision, consequences, ACs
-   affected, verifying evidence.
+2. Record the handed-off decisions of T2 and T3 in `DECISIONS.md` before merging each
+   ticket, as the next free `Decision N` after T1's Decisions 1 to 3 (T1 recorded
+   its own on its branch; keep them). Fill the template: context, options, decision,
+   consequences, ACs affected, verifying evidence.
 3. Run the final gate (README) and record it in `EVIDENCE.md`.
 4. Collect runtime evidence using the commands in `EVIDENCE.md` against
    `dependency-fake-upstreams` and `dependency-api`:

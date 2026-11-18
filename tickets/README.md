@@ -44,10 +44,14 @@ If a ticket needs a frozen file changed, stop and raise it with the integrator
 
 ## Decisions
 
-`DECISIONS.md` has a single owner (T4) to avoid merge conflicts. Each ticket file
-lists "Decisions to hand to the integrator". The owner sends that text to the
-integrator, who commits it to `DECISIONS.md` on the integration branch **before**
-merging that ticket's code. Do not edit `DECISIONS.md` from a ticket branch.
+`DECISIONS.md` is edited from one branch at a time to avoid merge conflicts, and
+`AGENTS.md` requires a decision to be recorded before code depends on it.
+
+- **T1** already depends on three interpretations, so its branch records them as
+  Decisions 1 to 3, filling the template slots. Merge T1 before T4 edits the file.
+- **T2 and T3** do not edit the file. Each ticket file lists "Decisions to hand to the
+  integrator". The owner sends that text to the integrator (T4), who appends it as the
+  next free `Decision N` on the integration branch **before** merging that ticket's code.
 
 ## Merge order
 

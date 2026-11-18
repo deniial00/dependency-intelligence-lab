@@ -15,6 +15,7 @@ the domain records, with malformed-but-valid JSON becoming an attributed
 - `src/dependency_intelligence/sources/osv.py`
 - `src/dependency_intelligence/sources/deps_dev.py`
 - new: `tests/test_sources_adapters.py` (mark every test `@pytest.mark.sources`)
+- `DECISIONS.md`: Decisions 1 to 3 only (the three listed under "Decisions recorded")
 
 ## Read-only context
 
@@ -92,13 +93,14 @@ uv run mypy src tests checks
 Diff summary, the command output above, any unresolved risk, and the decisions
 below.
 
-## Decisions to hand to the integrator
+## Decisions recorded
 
-- Whether a deps.dev `versionKey` that differs from the requested coordinate is
-  rejected as `invalid_response` (`VersionKey.coordinate()` is supplied but the
-  spec is silent).
-- Which failure surfaces when both deps.dev calls fail.
-- OSV `next_page_token` pagination is not followed (the spec asks for one query).
+Recorded in `DECISIONS.md` as Decisions 1 to 3 on this branch, before merge:
+
+1. A deps.dev `versionKey` that differs from the requested coordinate is not rejected.
+2. deps.dev fails fast: the first failure is reported and cancels the other request;
+   same-pass ties go to the metadata endpoint.
+3. OSV `next_page_token` pagination is not followed (the spec asks for one query).
 
 ## Do not
 
