@@ -63,3 +63,67 @@ verification. “The AI suggested it” is not a rationale.
 - Specification or acceptance criteria affected: SPEC 4.2, AC-02.
 - Evidence that will verify it: `tests/test_sources_adapters.py`
   `test_osv_makes_a_single_query_and_ignores_next_page_token`.
+
+## Decision 4
+
+- Context: SPEC 6 fixes expiry at insertion and bounds the cache with LRU eviction, but
+  does not say what a second `put` for a key that is already cached does to that
+  entry's expiry or recency. T3 re-puts a key whenever a fresh complete assessment
+  replaces one, for example after the earlier entry expired.
+- Options considered: (a) replace the value and reset both its expiry and its recency;
+  (b) replace the value but keep the original expiry; (c) ignore the second `put`
+  while the existing entry is live.
+- Decision: (a). `AsyncTTLCache.put` on an existing key stores the new value, sets
+  `expires_at = clock() + ttl_seconds`, and moves the key to the most recently used
+  position. Replacing a key never evicts another entry, because the entry count does
+  not grow.
+- Consequences and risk: a `put` is a fresh insertion, so "expiry fixed at insertion"
+  still holds and a read never extends expiry. A key that is re-put repeatedly can stay
+  cached longer than one TTL from its first insertion, but each stored value is never
+  older than one TTL. Option (b) would let fresh data expire on the old schedule.
+  Option (c) would keep serving the older value when the caller has newer data.
+- Specification or acceptance criteria affected: SPEC 6, AC-05.
+- Evidence that will verify it: `tests/test_cache_policy.py`
+  `test_reput_replaces_value_and_resets_ttl`,
+  `test_reput_marks_key_most_recently_used_without_eviction`, and
+  `test_max_entries_one_keeps_only_latest`.
+
+## Decision 5
+
+- Context: SPEC 6 says entries expire a fixed TTL after insertion, but does not say
+  whether an entry is still live at exactly `inserted_at + ttl`. The contract test
+  advances the clock by exactly `ttl` and expects the entries to be gone.
+- Options considered: (a) inclusive boundary: expired when `now >= inserted_at + ttl`;
+  (b) exclusive boundary: expired only when `now > inserted_at + ttl`.
+- Decision: (a). An entry is expired once `clock() >= expires_at`. The rule lives in one
+  place (`_Entry.is_expired`) and is shared by `get`, `size`, and eviction.
+- Consequences and risk: an entry is live for exactly `ttl` seconds on the injected
+  monotonic clock, and no longer. Option (b) would fail
+  `test_cache_expires_and_evicts_lru`. With real clocks the difference is negligible.
+- Specification or acceptance criteria affected: SPEC 6, AC-05.
+- Evidence that will verify it: `tests/test_contract.py`
+  `test_cache_expires_and_evicts_lru`, and `tests/test_cache_policy.py`
+  `test_entry_is_live_just_before_ttl_and_expired_at_exactly_ttl` and
+  `test_read_does_not_extend_expiry`.
+
+## Decision 6
+
+- Context: SPEC 6 requires a concurrency-safe cache. T2 allows either an
+  `asyncio.Lock` or critical sections that contain no `await`. The choice changes what
+  the concurrency test can prove.
+- Options considered: (a) rely only on having no `await` inside critical sections;
+  (b) guard every read and write of the cache's state with one `asyncio.Lock`, keeping
+  the critical sections free of `await` as well.
+- Decision: (b). `get`, `put`, and `size` each take the lock. Expired entries are purged
+  only when an insert goes over capacity or `size()` is called, with no background
+  task, so nothing keeps running after the cache is dropped.
+- Consequences and risk: correctness does not depend on a future edit keeping the
+  critical sections free of `await`. Because tasks are never suspended inside a
+  critical section today, they never contend for the lock, so the concurrency test is
+  smoke evidence (the size bound holds and nothing raises), not proof that the lock is
+  needed. A purge scans every entry, which is fine at the default 2,000 entries but
+  makes `size()` cost grow with the cache.
+- Specification or acceptance criteria affected: SPEC 6, AC-05.
+- Evidence that will verify it: `tests/test_cache_policy.py`
+  `test_concurrent_get_put_never_exceeds_capacity_or_raises` and
+  `test_expired_entries_are_purged_before_lru_eviction`.
